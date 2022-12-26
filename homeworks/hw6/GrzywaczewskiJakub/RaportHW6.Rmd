@@ -1,0 +1,129 @@
+---
+title: "Raport HW6"
+author: "Jakub Grzywaczewski"
+date: "2022-12-26"
+output: html_document
+---
+
+# Wprowadzenie
+
+Zadaniem opisanym w pracy domowej numer 6 było znalezienie pakietu, który nie został omówiony podczas zajęć, oraz utworzenie wizualizacji z wykorzystaniem tego pakietu.
+Mój wybór padł na pakiet *mapview*.
+
+# O pakiecie
+
+[Mapview](https://r-spatial.github.io/mapview/reference/index.html) jest pakietem zbudowanym na podstawie innego równie znanego pakietu aka Leaflet. Mapview umożliwia dla użytkownika szybkie i w miarę bezbolesne tworzenie interaktywnych map, które w przypadku danych z możliwym podziałem na sektory geograficzne może być niezwykle przydatnym sposobem wizualizacji danych.
+Niestety poza bazowymi ustawieniami funkcji *mapview*, pakiet nie pozostania użytkownikowi wiele miejsca do modyfikowania utworzonego wykresu. Całe szczęście bazowa funkcja pakietu daje wystarczająco dużo opcji, aby pokryć znaczną większość zapotrzebowania użytkownika. 
+
+Głównym plusem Mapview ponad bazowym Leaflet'em jest fakt, iż Mapview sam ustala typ mapy. W ekosystemie map w języku R możemy się spotkać z wieloma formatami przechowywania informacji geograficznych (sf, sfc, SpatVector, GEOJSON, stars, s2, itp). Mapview upraszcza prace z tymi formatami wykonując potrzebne przekształcenia za plecami, abyśmy mogli zobaczyć nasze dane na mapie jak najszybciej i jak najdokładniej.
+
+# Przykład użycia
+
+Do moich danych dołączony był plik *.shp* z opisem geograficznym miasta Philldelphia, Pensylwania USA.
+
+```{r setup, warning = FALSE, message = FALSE}
+library(sf)
+library(mapview)
+library(dplyr)
+library(leaflet)
+```
+
+## Pobieramy dane
+```{r download, warning = FALSE, message = FALSE, eval=FALSE}
+# NOT EXECUTED BY KNIT
+# Optain data
+download.file("http://bit.ly/R-spatial-data", "R-spatial-data.zip")
+unzip("R-spatial-data.zip", exdir = "data")
+```
+
+## Wczytujemy shape file
+```{r load, warning=FALSE, message=FALSE}
+# Load shape file
+philly_map_raw <- read_sf("./data/Philly/PhillyTotalPopHHinc.shp", quiet = TRUE)
+philly_map <- philly_map_raw %>%
+  mutate(
+    SECTOR_ID = GEOID10 %/% 100,
+    .keep = "all"
+  )
+```
+
+## Filturejmy dane
+```{r data}
+education_dataset <- read.csv("./data/PhillyEducation.csv")
+philly_ed_data <- education_dataset %>%
+  mutate(
+    SECTOR_ID = GEOID %/% 100,
+    .keep = "all"
+  ) %>%
+  group_by(SECTOR_ID) %>%
+  mutate(
+    fem_higher_ed = fem_bachelor + fem_doctorate,
+    male_higher_ed = male_bachelor + male_doctorate,
+    fem_pop = fem_ovr_25,
+    male_pop = male_ovr_25,
+    .keep = "unused"
+  ) %>%
+  select(SECTOR_ID, fem_higher_ed, male_higher_ed, fem_pop, male_pop) %>%
+  mutate(
+    fem_higher_proc = round((fem_higher_ed / fem_pop) * 100, 2),
+    male_higher_proc = round((male_higher_ed / male_pop) * 100, 2),
+    fem2male_comp = (fem_higher_ed - male_higher_ed) / (fem_higher_ed + male_higher_ed),
+    display = paste0(
+      "Women: ", fem_higher_proc, "% |\n",
+      "Men: ", male_higher_proc, "%"
+    ),
+    .keep = "all"
+  )
+```
+
+## Łączymy nasze dane z mapą
+```{r join}
+data_map <- inner_join(philly_map, philly_ed_data, by = c("SECTOR_ID" = "SECTOR_ID"))
+# Paleta kolorow
+color_pal <- colorRampPalette(c("blue", "red"))
+```
+
+## Pierwsza mapa
+```{r map1}
+mapview(data_map,
+        zcol = "fem2male_comp",
+        label = "display",
+        layer.name = paste(
+          "Difference in education by sex.",
+          "red  = more women",
+          "blue = more men",
+          sep = "<br>"
+        ),
+        col.regions = color_pal(364),
+        legend = TRUE
+) 
+```
+
+## Połączenie map
+```{r map2, out.width="100%"}
+# Additional functionality
+# install.packages('leaflet.extras2')
+
+men_map <- mapview(data_map,
+        zcol = "male_higher_proc",
+        label = "display",
+        layer.name = "Percentage of men with higher education",
+        legend = TRUE
+)
+
+women_map <- mapview(data_map,
+        zcol = "fem_higher_proc",
+        label = "display",
+        layer.name = "Percentage of women with higher education",
+        legend = TRUE
+) 
+
+men_map | women_map
+```
+
+# Podsumowanie
+
+***Mapview*** jest świetnym pakietem do wizualizowania danych ściśle związanych z mapami. Na moment obecny jest on moim "goto" pakietem, jeżeli chodzi o ten region analizy danych. Dla zainteresowanych polecam zapoznać się z przykładami i dokumentacja zawartymi na [oficjalnej stronie pakiet](https://r-spatial.github.io/mapview/reference/index.html)
+
+
+
